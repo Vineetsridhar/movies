@@ -38,6 +38,7 @@ const pool = new Pool({
 
 const MOVIETABLE = "movies";
 const RATINGSTABLE = "ratings";
+const CREDITSTABLE = "credits";
 //#endregion
 
 //#region Define Interfaces
@@ -53,12 +54,41 @@ interface Movie {
     original_title: string,
     overview: string,
 }
+
 interface Rating {
     userid: number,
     movieid: number,
     rating: number,
     timestamp: number
 }
+
+interface Crew {
+    credit_id: string,
+    department: string,
+    gender: number,
+    id: number,
+    job: string,
+    name: string,
+}
+
+interface Actor {
+    credit_id: string,
+    cast_id: number,
+    character: string,
+    department: string,
+    gender: number,
+    id: number,
+    job: string,
+    name: string,
+    order: number
+}
+
+interface Credits {
+    crew: string,
+    actors: string,
+    id: number
+}
+
 //#endregion
 
 //#region SQL Queries
@@ -73,8 +103,101 @@ async function makeQuery(query: string) {
 }
 //#endregion
 
+//#region Helper methods
+function isAlphaNumeric(code: number): boolean {
+    return (code > 64 && code < 91) || (code > 96 && code < 123) || (code > 47 && code < 58);
+}
+/*
+ * DB contains json object with single quotes
+ * Text like 'O'neil' needs to be replaced with "O'neil"
+ */
+function cleanString(result: String): string {
+    const output = [];
+    for (let i = 0; i < result.length; i++) {
+        if (result.charAt(i) === "\'") {
+            if (i > 0 && i < result.length) {
+                const prevCharCode = result.charCodeAt(i - 1);
+                const nextCharCode = result.charCodeAt(i + 1);
+
+                if (!isAlphaNumeric(prevCharCode) || !isAlphaNumeric(nextCharCode)) {
+                    output.push("\"");
+                } else {
+                    output.push("\'")
+                }
+            }
+        } else {
+            output.push(result.charAt(i))
+        }
+    }
+    return output.join("");
+}
+//#endregion
 
 //#region Define GraphQL Objects
+const ActorType = new GraphQLObjectType({
+    name: 'Actor',
+    description: 'This object represents an Actor',
+    fields: () => ({
+        credit_id: { type: GraphQLString },
+        cast_id: { type: GraphQLInt },
+        character: { type: GraphQLString },
+        department: { type: GraphQLString },
+        gender: { type: GraphQLInt },
+        id: { type: GraphQLInt },
+        job: { type: GraphQLString },
+        name: { type: GraphQLString },
+        order: { type: GraphQLInt },
+    })
+})
+
+const CrewType = new GraphQLObjectType({
+    name: 'Crew',
+    description: 'This object represents a crew member',
+    fields: () => ({
+        credit_id: { type: GraphQLString },
+        department: { type: GraphQLString },
+        gender: { type: GraphQLInt },
+        id: { type: GraphQLInt },
+        job: { type: GraphQLString },
+        name: { type: GraphQLString },
+    })
+})
+
+const CreditType = new GraphQLObjectType({
+    name: 'Credit',
+    description: 'This object represents a movie credit',
+    fields: () => ({
+        crew: {
+            type: GraphQLList(CrewType),
+            resolve: (credit: Credits) => {
+                try {
+                    //Replace apostrophes with quotes and None wil null for JSON parsing
+                    credit["crew"] = cleanString(credit["crew"]).replace(/None/g, "null");
+                    return JSON.parse(credit["crew"]);
+                } catch (err) {
+                    logger.error("Error when parsing crew members")
+                    return []
+                }
+            }
+        },
+        actors: {
+            type: GraphQLList(ActorType),
+            resolve: (credit: Credits) => {
+                try {
+                    //Replace apostrophes with quotes and None wil null for JSON parsing
+                    cleanString(credit["actors"])
+                    credit["actors"] = cleanString(credit["actors"]).replace(/None/g, "null");
+                    return JSON.parse(credit["actors"]);
+                } catch (err) {
+                    logger.error("Error when parsing actors members")
+                    return []
+                }
+            }
+        },
+        id: { type: GraphQLNonNull(GraphQLInt) }
+    })
+})
+
 const RatingType = new GraphQLObjectType({
     name: 'Rating',
     description: 'This object represents a Rating',
@@ -82,7 +205,7 @@ const RatingType = new GraphQLObjectType({
         userid: { type: GraphQLNonNull(GraphQLInt) },
         movieid: { type: GraphQLNonNull(GraphQLInt) },
         rating: { type: GraphQLNonNull(GraphQLFloat) },
-        timestamp: { 
+        timestamp: {
             type: GraphQLString,
             resolve: (rating: Rating) => new Date(rating.timestamp * 1000).toDateString()
         },
@@ -120,7 +243,11 @@ const MovieType = new GraphQLObjectType({
         overview: { type: GraphQLString },
         ratings: {
             type: GraphQLList(RatingType),
-            resolve: async (movie:Movie) => await makeQuery(`SELECT * FROM ${RATINGSTABLE} WHERE movieid = ${movie.id}`)
+            resolve: async (movie: Movie) => await makeQuery(`SELECT * FROM ${RATINGSTABLE} WHERE movieid = ${movie.id}`)
+        },
+        credits: {
+            type: GraphQLList(CreditType),
+            resolve: async (movie: Movie) => await makeQuery(`SELECT * FROM ${CREDITSTABLE} WHERE id=${movie.id}`)
         }
     })
 })
@@ -151,7 +278,7 @@ const schema = new GraphQLSchema({
 })
 //#endregion
 
-
+//#region Express listner
 app.use('/graphql', graphqlHTTP({
     schema,
     graphiql: true
@@ -161,3 +288,4 @@ app.use('/graphql', graphqlHTTP({
 app.listen(port, () => {
     logger.info(`Server has been started on port ${port}`)
 });
+//#endregion
