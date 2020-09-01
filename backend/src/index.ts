@@ -10,6 +10,12 @@ app.use('/graphql', graphqlHTTP({
     graphiql: true
 }))
 
+app.use('/', (req, res) => {
+    res.status(200).send({
+        "Hello":"World"
+    })
+})
+
 app.listen(port, () => {
     console.log(`Server has been started on port ${port}`)
 });

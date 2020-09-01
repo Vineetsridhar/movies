@@ -31,6 +31,24 @@ const pool = new Pool({
     password: process.env.DBPSSWD,
     port: 5432,
 });
+console.log(pool)
+async function startServer(){
+    let retries = 8;
+    while(retries){
+        try{ 
+            await pool.connect()
+            console.log("Connected!")
+            break;
+        } catch(err){
+            console.log("retrying", err);
+            retries--;
+            await new Promise(res => setTimeout(res, 5000))
+        }
+    }
+}
+startServer()
+
+
 
 const MOVIETABLE = "movies";
 const RATINGSTABLE = "ratings";
